@@ -7,7 +7,7 @@ name = "scriptx"
 dynamic = ["version"]
 description = "A lightweight manager for PEP 723 Python scripts — install, run, update, and manage standalone scripts with isolated environments."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 keywords = []
 authors = [
@@ -16,7 +16,6 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -26,6 +25,10 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
+  "python-metadata-parser>=0.1.3",
+  "rich>=14.2.0",
+  "typer-slim>=0.20.0",
+  "uv>=0.9.5",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +52,7 @@ Source = "https://github.com/FlavioAmurrioCS/scriptx"
 
 [project.scripts]
 scriptx = "scriptx.__main__:main"
+",scriptx" = "scriptx.__main__:main"
 
 ###############################################################################
 # region: hatch
@@ -75,7 +79,6 @@ check = "mypy --install-types --non-interactive {args:src/scriptx tests}"
 
 [[tool.hatch.envs.hatch-test.matrix]]
 python = [
-  "3.9",
   "3.10",
   "3.11",
   "3.12",
@@ -123,7 +126,7 @@ exclude_lines = [
 # region: pyright
 ###############################################################################
 [tool.pyright]
-pythonVersion = "3.9"
+pythonVersion = "3.10"
 ###############################################################################
 # endregion: pyright
 ###############################################################################
@@ -132,7 +135,7 @@ pythonVersion = "3.9"
 # region: mypy
 ###############################################################################
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true
