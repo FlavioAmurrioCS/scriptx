@@ -104,7 +104,6 @@ class UvInstaller:
                 check=False,
                 capture_output=True,
                 text=True,
-                env={"VIRTUAL_ENV": ""},
             )
             if result.returncode != 0:
                 print(result.stdout)
