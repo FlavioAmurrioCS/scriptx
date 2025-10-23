@@ -119,6 +119,7 @@ class UvInstaller:
             if not virtualenv:
                 msg = f"Could not determine virtualenv location for {src}"
                 raise RuntimeError(msg)
+            virtualenv = os.path.abspath(virtualenv)
 
             with open(src) as f:
                 file_content = f.readlines()
