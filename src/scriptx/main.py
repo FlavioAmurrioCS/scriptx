@@ -1,20 +1,25 @@
-#!/Users/flavio/.cache/uv/environments-v2/script-211d432748623868/bin/python
+#!/Users/flavio/opt/scriptx/installed_tools/sx/venv/bin/python
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.8"
 # dependencies = [
+#   "tomli >= 1.1.0 ; python_version < '3.11'",
 # ]
 # ///
+# flake8: noqa: E501
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import logging
 import operator
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import MutableMapping
@@ -52,13 +57,40 @@ if TYPE_CHECKING:
         ) -> argparse.ArgumentParser: ...
         def run(self) -> int: ...
 
-    class ScriptMetadata(TypedDict):
-        requires_python: str
-        dependencies: list[str]
+    ScriptMetadata = TypedDict(
+        "ScriptMetadata", {"requires-python": str, "dependencies": list[str]}
+    )
 
     LinkMode = Literal["symlink", "copy", "hardlink"]
 
 logger = logging.getLogger(__name__)
+
+
+def subprocess_run(
+    cmd: tuple[str, ...],
+    *,
+    check: bool = False,
+    capture_output: bool = False,
+    env: Mapping[str, str] | None = None,
+    cwd: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    pretty_cmd = " ".join(shlex.quote(part) for part in cmd)
+    logger.debug("Running command: %s", pretty_cmd)
+    result = subprocess.run(  # noqa: S603
+        cmd, check=False, capture_output=capture_output, text=True, env=env, cwd=cwd
+    )
+    if check and result.returncode != 0:
+        logger.error("Command '%s' failed with return code %d.", pretty_cmd, result.returncode)
+        if capture_output:
+            logger.error("Stdout: %s", result.stdout)
+            logger.error("Stderr: %s", result.stderr)
+        raise subprocess.CalledProcessError(
+            returncode=result.returncode,
+            cmd=cmd,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
+    return result
 
 
 def func(s: str) -> Registry: ...
@@ -68,12 +100,22 @@ def func(s: str) -> Registry: ...
 def pythons() -> Mapping[tuple[int, int], str]:
     """Return a mapping of available python versions to their executable paths."""
     ret: dict[tuple[int, int], str] = {}
+    ret[(sys.version_info.major, sys.version_info.minor)] = sys.executable
     for major, minor in [(3, i) for i in range(7, 15)]:
         exe_name = f"python{major}.{minor}"
         exe_path = shutil.which(exe_name)
         if exe_path:
             ret[(major, minor)] = exe_path
     return ret
+
+
+def latest_python() -> str:
+    """Return the path to the latest available python version."""
+    versions = pythons()
+    if not versions:
+        return sys.executable
+    latest_version = max(versions.keys())
+    return versions[latest_version]
 
 
 def extract_script_metadata(content: str) -> ScriptMetadata:
@@ -86,6 +128,20 @@ def extract_script_metadata(content: str) -> ScriptMetadata:
                 for line in match.group("content").splitlines(keepends=True)
             )
             break
+    if not content.strip():
+        return {"requires-python": ">=3.12", "dependencies": []}
+    try:
+        if sys.version_info >= (3, 11):
+            import tomllib
+        else:
+            import tomli as tomllib
+        data: ScriptMetadata = tomllib.loads(captured_content)  # type: ignore[assignment,unused-ignore]
+        logger.debug("Parsed script metadata using tomli/tomllib: %s", data)
+        return data  # noqa: TRY300
+    except ImportError:
+        logger.debug("tomli or tomllib not available, falling back to regex parsing.")
+    if "depedencies" not in captured_content and "requires-python" not in captured_content:
+        return {"requires-python": ">=3.12", "dependencies": []}
 
     requires = re.search(
         r"^requires-python\s*=\s*(['\"]+)(?P<value>.+)(\1)$",
@@ -108,13 +164,13 @@ def extract_script_metadata(content: str) -> ScriptMetadata:
             if line.strip() and not line.strip().startswith("#")
         ]
 
-    return {"requires_python": python_version, "dependencies": dependencies}
+    return {"requires-python": python_version, "dependencies": dependencies}
 
 
 def matching_python(version_spec: str) -> list[str]:
     ops, _minor = version_spec.split("3.", maxsplit=1)
     version = (3, int(_minor.split(".", maxsplit=1)[0]))
-    ops = {
+    ops_func = {
         ">=": operator.ge,
         "<=": operator.le,
         ">": operator.gt,
@@ -124,41 +180,100 @@ def matching_python(version_spec: str) -> list[str]:
     }[ops.strip()]
     ret = []
     for ver, u in pythons().items():
-        if ops(ver, version):
+        if ops_func(ver, version):
             ret.append(u)
     return ret
 
 
-def create_virtualenv(script: str) -> str:
+def _create_virtualenv_uv(path: str, metadata: ScriptMetadata) -> str:
+    uv_bin = shutil.which("uv")
+    if not uv_bin:
+        msg = "uv is not installed."
+        raise RuntimeError(msg)
+    requires_python = metadata["requires-python"]
+    dependencies = metadata["dependencies"]
+    env = {
+        "UV_NATIVE_TLS": "true",
+        "UV_NO_CONFIG": "true",
+        "UV_WORKING_DIRECTORY": "/tmp",  # noqa: S108
+        # "UV_PYTHON": requires_python,
+    }
+    uv_cmd_prefix = (
+        uv_bin,
+        "--quiet",
+        # "--no-config",
+        # "--native-tls",
+        # "--working-directory=/tmp",
+    )
+    logger.debug("Creating virtualenv with uv using env: %s", env)
+    cmd: tuple[str, ...] = (*uv_cmd_prefix, "venv", f"--python={requires_python}", path)
+    subprocess_run(cmd, check=True, env=env)
+    if dependencies:
+        cmd = (
+            *uv_cmd_prefix,
+            "pip",
+            "install",
+            f"--prefix={path}",
+            f"--python={requires_python}",
+            *dependencies,
+        )
+        subprocess_run(cmd, check=True, env=env, capture_output=True)
+    return path
+
+
+def _create_virtualenv_virtualenv(path: str, metadata: ScriptMetadata) -> str:
+    virtualenv_bin = shutil.which("virtualenv")
+    if not virtualenv_bin:
+        msg = "virtualenv is not installed."
+        raise RuntimeError(msg)
+    requires_python = metadata["requires-python"]
+    dependencies = metadata["dependencies"]
+    python_bin = next(iter(matching_python(requires_python)), latest_python())
+    cmd: tuple[str, ...] = (virtualenv_bin, path, "--no-download", f"--python={python_bin}")
+    subprocess_run(cmd, check=True, capture_output=True)
+    if dependencies:
+        cmd = (os.path.join(path, "bin", "pip"), "install", *dependencies)
+        subprocess_run(cmd, check=True, capture_output=True)
+    return path
+
+
+def _create_virtualenv_venv(path: str, metadata: ScriptMetadata) -> str:
+    requires_python = metadata["requires-python"]
+    dependencies = metadata["dependencies"]
+    python_bin = next(iter(matching_python(requires_python)), latest_python())
+    cmd: tuple[str, ...] = (python_bin, "-m", "venv", path)
+    subprocess_run(cmd, check=True, capture_output=True)
+    if dependencies:
+        cmd = (os.path.join(path, "bin", "pip"), "install", *dependencies)
+        subprocess_run(cmd, check=True, capture_output=True)
+    return path
+
+
+def quick_atomic_delete(path: str) -> None:
+    parent_dir = os.path.dirname(path)
+    if not os.path.isdir(parent_dir):
+        return
+    tmp_dir = tempfile.TemporaryDirectory(dir=parent_dir)
+    atexit.register(tmp_dir.__exit__, None, None, None)
+    tmp_dir.__enter__()
+    logger.debug("Moving %s to temporary location %s for deletion.", path, tmp_dir.name)
+    if not os.path.exists(path):
+        return
+    os.replace(path, os.path.join(tmp_dir.name, "to_delete"))
+
+
+def create_virtualenv(script: str, path: str) -> str:
+    with open(script) as f:
+        content = f.read()
+    metadata = extract_script_metadata(content)
+    quick_atomic_delete(path)
     uv_bin = shutil.which("uv")
     if uv_bin:
-        cmd = (
-            uv_bin,
-            "sync",
-            "--native-tls",
-            f"--script={script}",
-        )
-        result = subprocess.run(  # noqa: S603
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print(result.stdout)
-            print(result.stderr)
-            msg = f"uv failed to install {script}"
-            raise RuntimeError(msg)
-
-        virtualenv = ""
-        for line in result.stderr.splitlines():
-            if " environment at: " in line:
-                virtualenv = line.split(" environment at: ", maxsplit=1)[-1]
-        if not virtualenv:
-            msg = f"Could not determine virtualenv location for {script}"
-            raise RuntimeError(msg)
-        return os.path.abspath(virtualenv)
-    return "NOTHING"
+        return _create_virtualenv_uv(path, metadata)
+    virtualenv_bin = shutil.which("virtualenv")
+    if virtualenv_bin:
+        return _create_virtualenv_virtualenv(path, metadata)
+    return _create_virtualenv_venv(path, metadata)
 
 
 @dataclass
@@ -258,8 +373,8 @@ class Inventory(Mapping[str, str]):
         location, _http_message = urlretrieve(url)  # noqa: S310
         return self._install_file(location, link="copy", name=name)
 
-    def _script_setup_virtualenv(self, script_location: str) -> str:
-        virtualenv = create_virtualenv(script_location)
+    def _script_setup_virtualenv(self, script_location: str, path: str) -> str:
+        virtualenv = create_virtualenv(script_location, path=path)
         with open(script_location) as f:
             content = f.readlines()
         if content and content[0].startswith("#!"):
@@ -303,9 +418,12 @@ class Inventory(Mapping[str, str]):
         if name is None or script_location is None:
             return None
 
-        virtualenv = self._script_setup_virtualenv(script_location)
+        virtualenv = self._script_setup_virtualenv(
+            script_location, path=os.path.join(self.path, name, "venv")
+        )
 
         bin_location = os.path.join(self.bin_path, name)
+        os.makedirs(self.bin_path, exist_ok=True)
         os.symlink(script_location, bin_location)
         metadata: InstalledTool = {
             "source": src,
@@ -321,18 +439,20 @@ class Inventory(Mapping[str, str]):
             print(f"Tool '{name}' is not installed.", file=sys.stderr)
             return
         metadata = self.get_metadata(name)
+
+        # Remove symlink in bin path
         bin_path = os.path.join(self.bin_path, name)
         if os.path.exists(bin_path):
             os.unlink(bin_path)
 
+        # Remove script directory, virtualenv is colocated
         tool_dir = os.path.dirname(script_path)
-        if os.path.exists(tool_dir):
-            shutil.rmtree(tool_dir)
+        quick_atomic_delete(tool_dir)
 
         if metadata:
             venv_path = metadata["venv"]
-            if os.path.exists(venv_path):
-                shutil.rmtree(venv_path)
+            # Shouldnt be needed as venv is inside tool_dir, but just in case
+            quick_atomic_delete(venv_path)
 
     def list_scripts(self) -> list[str]:
         if not os.path.exists(self.path):
@@ -449,9 +569,8 @@ class ReInstallCmd(NamedTuple):
         if metadata is None:
             print(f"Could not retrieve metadata for tool '{self.tool}'.")
             return 1
-        venv = INVENTORY._script_setup_virtualenv(metadata["path"])  # noqa: SLF001
-        metadata["venv"] = venv
-        INVENTORY.update_metadata(self.tool, metadata)
+        INVENTORY._script_setup_virtualenv(metadata["path"], metadata["venv"])  # noqa: SLF001
+        print(f"Tool '{self.tool}' has been reinstalled.")
         return 0
 
 
@@ -839,7 +958,7 @@ def main(argv: list[str] | tuple[str, ...] | None = None) -> int:
       SCRIPTX_HOME  - Directory where ScriptX stores its data (default: {_SCRIPTX_HOME_DEFAULT})
       SCRIPTX_BIN   - Directory where ScriptX stores executable tools (default: {_SCRIPTX_BIN_DEFAULT})
 
-    """)  # noqa: E501
+    """)
 
     parser.add_argument(
         "-v", "--verbose", action="count", default=0, help="Increase verbosity level."
@@ -866,125 +985,19 @@ def main(argv: list[str] | tuple[str, ...] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     cls = SUB_COMMANDS[command]
-    cmd_instance = cls(**{k: v for k, v in vars(args).items() if k not in ("command", "verbose")})
+    exclude_args = ("command", "verbose")
+    try:
+        cmd_instance = cls(
+            **{k: v for k, v in vars(args).items() if k not in exclude_args}
+        )  # pyrefly: ignore[bad-instantiation]
+    except TypeError as e:
+        print(
+            f"BUG!!!!!: {cls.__name__} received arguments from the parser that do not match its expected attributes: {e}",
+            file=sys.stderr,
+        )
+        return 1
     return cmd_instance.run()
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-"""
-scriptx install <url|file_path|tool_name> --name <tool_name>
-    If github url, resolve to raw content and install.
-    tool_name is optional; if not provided, derive from url or file_path.
-
-scriptx reinstall <tool_name>
-    Reinstall the specified tool, useful for repairing broken installations.
-
-scriptx uninstall/remove <tool_name>
-    Remove the installed tool from inventory.
-
-scriptx list
-    List all installed tools with their versions and sources. (Single line per tool to allow for grepping.)
-
-scriptx run <tool_name> [args...]
-    Execute the specified tool with optional arguments. Ideal for one-off runs.
-
-scriptx upgrade <tool_name|all>
-    Upgrade the specified tool or all tools to the latest version from their registries.
-
-scriptx update
-    Update all registries to fetch the latest tool listings.
-
-scriptx registry add <registry_url | file | gh:owner/repo> [--name <registry_name>]
-    Add a new registry from the specified URL or local file path.
-
-scriptx registry remove registry_name
-    Remove the specified registry by name.
-
-scriptx search
-scriptx show/info
-scriptx cleanup
-
-####################################################################################################
-$ apt --help
-  list - list packages based on package names
-  search - search in package descriptions
-  show - show package details
-  install - install packages
-  reinstall - reinstall packages
-  remove - remove packages
-  autoremove - automatically remove all unused packages
-  update - update list of available packages
-  upgrade - upgrade the system by installing/upgrading packages
-  full-upgrade - upgrade the system by removing/installing/upgrading packages
-  edit-sources - edit the source information file
-  satisfy - satisfy dependency strings
-
-####################################################################################################
-$ brew --help
-Example usage:
-  brew search TEXT|/REGEX/
-  brew info [FORMULA|CASK...]
-  brew install FORMULA|CASK...
-  brew update
-  brew upgrade [FORMULA|CASK...]
-  brew uninstall FORMULA|CASK...
-  brew list [FORMULA|CASK...]
-
-####################################################################################################
-$ pipx --help
-usage: pipx [-h] [--quiet] [--verbose] [--global] [--version]
-            {install,install-all,uninject,inject,pin,unpin,upgrade,upgrade-all,upgrade-shared,uninstall,uninstall-all,reinstall,reinstall-all,list,interpreter,run,runpip,ensurepath,environment,completions} ...
-
-Install and execute apps from Python packages.
-
-Binaries can either be installed globally into isolated Virtual Environments
-or run directly in a temporary Virtual Environment.
-
-Virtual Environment location is /Users/flavio/opt/runtool/pipx_home/venvs.
-Symlinks to apps are placed in /Users/flavio/opt/runtool/bin.
-Symlinks to manual pages are placed in /Users/flavio/.local/share/man.
-
-optional environment variables:
-  PIPX_HOME              Overrides default pipx location. Virtual Environments will be installed to $PIPX_HOME/venvs.
-  PIPX_GLOBAL_HOME       Used instead of PIPX_HOME when the `--global` option is given.
-  PIPX_BIN_DIR           Overrides location of app installations. Apps are symlinked or copied here.
-  PIPX_GLOBAL_BIN_DIR    Used instead of PIPX_BIN_DIR when the `--global` option is given.
-  PIPX_MAN_DIR           Overrides location of manual pages installations. Manual pages are symlinked or copied here.
-  PIPX_GLOBAL_MAN_DIR    Used instead of PIPX_MAN_DIR when the `--global` option is given.
-  PIPX_DEFAULT_PYTHON    Overrides default python used for commands.
-  PIPX_USE_EMOJI         Overrides emoji behavior. Default value varies based on platform.
-  PIPX_HOME_ALLOW_SPACE  Overrides default warning on spaces in the home path
-
-options:
-  -h, --help            show this help message and exit
-  --quiet, -q           Give less output. May be used multiple times corresponding to the ERROR and CRITICAL logging levels. The count maxes out at 2.
-  --verbose, -v         Give more output. May be used multiple times corresponding to the INFO, DEBUG and NOTSET logging levels. The count maxes out at 3.
-  --global              Perform action globally for all users.
-  --version             Print version and exit
-
-subcommands:
-  Get help for commands with pipx COMMAND --help
-
-  {install,install-all,uninject,inject,pin,unpin,upgrade,upgrade-all,upgrade-shared,uninstall,uninstall-all,reinstall,reinstall-all,list,interpreter,run,runpip,ensurepath,environment,completions}
-    install             Install a package
-    install-all         Install all packages
-    uninject            Uninstall injected packages from an existing Virtual Environment
-    inject              Install packages into an existing Virtual Environment
-    pin                 Pin the specified package to prevent it from being upgraded
-    unpin               Unpin the specified package
-    upgrade             Upgrade a package
-    upgrade-all         Upgrade all packages. Runs `pip install -U <pkgname>` for each package.
-    upgrade-shared      Upgrade shared libraries.
-    uninstall           Uninstall a package
-    uninstall-all       Uninstall all packages
-    reinstall           Reinstall a package
-    reinstall-all       Reinstall all packages
-    list                List installed packages
-    interpreter         Interact with interpreters managed by pipx
-    run                 Download the latest version of a package to a temporary virtual environment, then run an app from it. Also compatible with local `__pypackages__` directory (experimental).
-    runpip              Run pip in an existing pipx-managed Virtual Environment
-    ensurepath          Ensure directories necessary for pipx operation are in your PATH environment variable.
-    environment         Print a list of environment variables and paths used by pipx.
-    completions         Print instructions on enabling shell completions for pipx
-"""  # noqa: E501
