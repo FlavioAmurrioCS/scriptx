@@ -128,7 +128,7 @@ def extract_script_metadata(content: str) -> ScriptMetadata:
                 for line in match.group("content").splitlines(keepends=True)
             )
             break
-    if not content.strip():
+    if not captured_content.strip():
         return {"requires-python": ">=3.12", "dependencies": []}
     try:
         if sys.version_info >= (3, 11):
@@ -140,9 +140,13 @@ def extract_script_metadata(content: str) -> ScriptMetadata:
         return data  # noqa: TRY300
     except ImportError:
         logger.debug("tomli or tomllib not available, falling back to regex parsing.")
+
+    return extract_script_metadata_with_regex(captured_content)
+
+
+def extract_script_metadata_with_regex(captured_content: str) -> ScriptMetadata:
     if "depedencies" not in captured_content and "requires-python" not in captured_content:
         return {"requires-python": ">=3.12", "dependencies": []}
-
     requires = re.search(
         r"^requires-python\s*=\s*(['\"]+)(?P<value>.+)(\1)$",
         captured_content,
@@ -179,7 +183,7 @@ def matching_python(version_spec: str) -> list[str]:
         "~=": operator.eq,
     }[ops.strip()]
     ret = []
-    for ver, u in pythons().items():
+    for ver, u in sorted(pythons().items(), key=lambda x: x[0]):
         if ops_func(ver, version):
             ret.append(u)
     return ret
@@ -341,6 +345,7 @@ class RegistryStore(MutableMapping[str, "Registry"]):
 class Inventory(Mapping[str, str]):
     path: str
     bin_path: str
+    registry_store: RegistryStore
 
     def _install_file(
         self, src: str, link: LinkMode, name: str | None = None
@@ -404,10 +409,10 @@ class Inventory(Mapping[str, str]):
             name, script_location = self._install_url(src, name=name)
         else:
             logger.debug("Installing tool from registry: %s", src)
-            if src not in REGISTRY_STORE:
+            if src not in self.registry_store:
                 print(f"Tool '{src}' not found in any registry.", file=sys.stderr)
                 return None
-            registry = REGISTRY_STORE[src]
+            registry = self.registry_store[src]
             tool_item = registry["tools"].get(src)
             if not tool_item:
                 print(f"Tool '{src}' not found in registry '{src}'.", file=sys.stderr)
@@ -489,8 +494,14 @@ _SCRIPTX_BIN_DEFAULT = os.path.join(_SCRIPTX_HOME_DEFAULT, "bin")
 
 SCRIPTX_HOME = os.path.expanduser(os.getenv("SCRIPTX_HOME") or _SCRIPTX_HOME_DEFAULT)
 SCRIPTX_BIN = os.path.expanduser(os.getenv("SCRIPTX_BIN") or _SCRIPTX_BIN_DEFAULT)
-REGISTRY_STORE = RegistryStore(path=os.path.join(SCRIPTX_HOME, "registries"))
-INVENTORY = Inventory(path=os.path.join(SCRIPTX_HOME, "installed_tools"), bin_path=SCRIPTX_BIN)
+_REGISTRY_STORE_PATH = os.path.join(SCRIPTX_HOME, "registries")
+REGISTRY_STORE = RegistryStore(path=_REGISTRY_STORE_PATH)
+_INVENTORY_PATH = os.path.join(SCRIPTX_HOME, "installed_tools")
+INVENTORY = Inventory(
+    path=_INVENTORY_PATH,
+    bin_path=SCRIPTX_BIN,
+    registry_store=REGISTRY_STORE,
+)
 
 
 ################################################################################

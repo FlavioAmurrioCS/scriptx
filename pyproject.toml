@@ -31,7 +31,10 @@ dependencies = [
 [project.optional-dependencies]
 tests = [
   "pytest",
+  "pytest-cov",
   "tomli ; python_version < '3.11'",
+  "uv",
+  "virtualenv",
 ]
 types = [
   "scriptx[tests]",
@@ -49,7 +52,6 @@ Source = "https://github.com/FlavioAmurrioCS/scriptx"
 
 [project.scripts]
 scriptx = "scriptx.main:main"
-",scriptx" = "scriptx.main:main"
 
 ###############################################################################
 # region: hatch
