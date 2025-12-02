@@ -28,7 +28,7 @@ classifiers = [
 dependencies = [
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 tests = [
   "pytest",
   "pytest-cov",
@@ -37,7 +37,7 @@ tests = [
   "virtualenv",
 ]
 types = [
-  "scriptx[tests]",
+  {include-group = "tests"},
   "typing-extensions",
   "mypy",
   "pyrefly",
@@ -63,14 +63,16 @@ source = "vcs"
 version-file = "src/scriptx/_version.py"
 
 [tool.hatch.envs.hatch-test]
-extra-dependencies = [
+dependency-groups = [
   "scriptx[tests]",
 ]
 
 [tool.hatch.envs.types]
 extra-dependencies = [
   "mypy>=1.0.0",
-  "scriptx[types]",
+]
+dependency-groups = [
+  "types",
 ]
 
 [tool.hatch.envs.types.scripts]

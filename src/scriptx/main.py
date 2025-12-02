@@ -196,12 +196,6 @@ def _create_virtualenv_uv(path: str, metadata: ScriptMetadata) -> str:
         raise RuntimeError(msg)
     requires_python = metadata["requires-python"]
     dependencies = metadata["dependencies"]
-    env = {
-        "UV_NATIVE_TLS": "true",
-        "UV_NO_CONFIG": "true",
-        "UV_WORKING_DIRECTORY": "/tmp",  # noqa: S108
-        # "UV_PYTHON": requires_python,
-    }
     uv_cmd_prefix = (
         uv_bin,
         "--quiet",
@@ -209,19 +203,17 @@ def _create_virtualenv_uv(path: str, metadata: ScriptMetadata) -> str:
         # "--native-tls",
         # "--working-directory=/tmp",
     )
-    logger.debug("Creating virtualenv with uv using env: %s", env)
     cmd: tuple[str, ...] = (*uv_cmd_prefix, "venv", f"--python={requires_python}", path)
-    subprocess_run(cmd, check=True, env=env)
+    subprocess_run(cmd, check=True)
     if dependencies:
         cmd = (
             *uv_cmd_prefix,
             "pip",
             "install",
             f"--prefix={path}",
-            f"--python={requires_python}",
             *dependencies,
         )
-        subprocess_run(cmd, check=True, env=env, capture_output=True)
+        subprocess_run(cmd, check=True, capture_output=True)
     return path
 
 
@@ -350,7 +342,7 @@ class Inventory(Mapping[str, str]):
     def _install_file(
         self, src: str, link: LinkMode, name: str | None = None
     ) -> tuple[str, str] | tuple[None, None]:
-        name = name or os.path.splitext(os.path.basename(src))[0]
+        name = name or os.path.splitext(os.path.basename(src))[0].replace("_", "-")
         script_location = self._resolve_script_path(name)
         if name in self:
             print(f"Tool '{name}' is already installed.", file=sys.stderr)
