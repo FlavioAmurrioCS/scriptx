@@ -1,3 +1,4 @@
+#:schema https://www.schemastore.org/pyproject.json
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
@@ -7,7 +8,7 @@ name = "scriptx"
 dynamic = ["version"]
 description = "A lightweight manager for PEP 723 Python scripts — install, run, update, and manage standalone scripts with isolated environments."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 keywords = []
 authors = [
@@ -16,7 +17,6 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -28,21 +28,40 @@ classifiers = [
 dependencies = [
 ]
 
+[project.optional-dependencies]
+
 [dependency-groups]
-tests = [
+dev = [
+  { include-group = "test" },
+  { include-group = "types" },
+]
+test = [
   "pytest",
   "pytest-cov",
   "tomli ; python_version < '3.11'",
   "uv",
   "virtualenv",
 ]
-types = [
-  { include-group = "tests" },
+types_packages = [
+  { include-group = "test" },
   "typing-extensions",
+]
+types = [
+  { include-group = "types_packages" },
   "mypy",
+]
+types_other = [
+  { include-group = "types_packages" },
   "pyrefly",
   "pyright[nodejs]",
   "ty",
+]
+docs = [
+  "zensical",
+  "mkdocs-material",
+  "mkdocs-marimo",
+  "pymdown-extensions",
+  "click==8.2.1",
 ]
 
 [project.urls]
@@ -64,13 +83,10 @@ version-file = "src/scriptx/_version.py"
 
 [tool.hatch.envs.hatch-test]
 dependency-groups = [
-  "scriptx[tests]",
+  "test",
 ]
 
 [tool.hatch.envs.types]
-extra-dependencies = [
-  "mypy>=1.0.0",
-]
 dependency-groups = [
   "types",
 ]
@@ -80,7 +96,6 @@ check = "mypy --install-types --non-interactive {args:src/scriptx tests}"
 
 [[tool.hatch.envs.hatch-test.matrix]]
 python = [
-  "3.9",
   "3.10",
   "3.11",
   "3.12",
@@ -128,7 +143,7 @@ exclude_lines = [
 # region: pyright
 ###############################################################################
 [tool.pyright]
-pythonVersion = "3.9"
+pythonVersion = "3.10"
 ###############################################################################
 # endregion: pyright
 ###############################################################################
@@ -137,7 +152,7 @@ pythonVersion = "3.9"
 # region: mypy
 ###############################################################################
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true
