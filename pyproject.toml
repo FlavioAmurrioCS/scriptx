@@ -8,7 +8,7 @@ name = "scriptx"
 dynamic = ["version"]
 description = "A lightweight manager for PEP 723 Python scripts — install, run, update, and manage standalone scripts with isolated environments."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 license = "MIT"
 keywords = []
 authors = [
@@ -17,6 +17,7 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
+  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -61,7 +62,7 @@ docs = [
   "mkdocs-material",
   "mkdocs-marimo",
   "pymdown-extensions",
-  "click==8.2.1",
+  "click",
 ]
 
 [project.urls]
@@ -96,6 +97,7 @@ check = "mypy --install-types --non-interactive {args:src/scriptx tests}"
 
 [[tool.hatch.envs.hatch-test.matrix]]
 python = [
+  "3.9",
   "3.10",
   "3.11",
   "3.12",
@@ -143,7 +145,7 @@ exclude_lines = [
 # region: pyright
 ###############################################################################
 [tool.pyright]
-pythonVersion = "3.10"
+pythonVersion = "3.9"
 ###############################################################################
 # endregion: pyright
 ###############################################################################
@@ -152,7 +154,7 @@ pythonVersion = "3.10"
 # region: mypy
 ###############################################################################
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.9"
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true

@@ -3,7 +3,7 @@
   "package_name": "scriptx",
   "module_name": "scriptx",
   "project_short_description": "A lightweight manager for PEP 723 Python scripts \u2014 install, run, update, and manage standalone scripts with isolated environments.",
-  "minimum_python_version": "3.10",
+  "minimum_python_version": "3.9",
   "full_name": "Flavio Amurrio",
   "email": "25621374+FlavioAmurrioCS@users.noreply.github.com",
   "github_username": "FlavioAmurrioCS"

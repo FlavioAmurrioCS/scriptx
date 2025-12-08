@@ -1,6 +1,6 @@
 #!/Users/flavio/opt/scriptx/installed_tools/sx/venv/bin/python
 # /// script
-# requires-python = ">=3.8"
+# requires-python = ">=3.9"
 # dependencies = [
 #   "packaging",
 #   "tomli >= 1.1.0 ; python_version < '3.11'",
@@ -39,13 +39,14 @@ from typing import NamedTuple
 if TYPE_CHECKING:
     from http.client import HTTPResponse
     from typing import Any
+    from typing import Union
 
     from typing_extensions import NotRequired
     from typing_extensions import Protocol
     from typing_extensions import TypedDict
     from typing_extensions import Unpack
 
-    _Params = dict[str, Any] | tuple[tuple[str, Any], ...] | list[tuple[str, Any]] | None
+    _Params = Union[dict[str, Any], tuple[tuple[str, Any], ...], list[tuple[str, Any]], None]
 
     HTTP_METHOD = Literal["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE"]
 
