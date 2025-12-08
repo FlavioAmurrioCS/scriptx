@@ -1,3 +1,4 @@
+#:schema https://www.schemastore.org/pyproject.json
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
@@ -5,9 +6,9 @@ build-backend = "hatchling.build"
 [project]
 name = "scriptx"
 dynamic = ["version"]
-description = "A lightweight manager for PEP 723 Python scripts — install, run, update, and manage standalone scripts with isolated environments."
+description = "A lightweight manager for PEP 723 Python scripts - install, run, update, and manage standalone scripts with isolated environments."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 license = "MIT"
 keywords = []
 authors = [
@@ -16,6 +17,7 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
+  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -25,24 +27,42 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "python-metadata-parser>=0.1.3",
-  "rich>=14.2.0",
-  "typer-slim>=0.20.0",
-  "uv>=0.9.5",
 ]
 
 [project.optional-dependencies]
-tests = [
+
+[dependency-groups]
+dev = [
+  { include-group = "test" },
+  { include-group = "types" },
+]
+test = [
   "pytest",
+  "pytest-cov",
   "tomli ; python_version < '3.11'",
+  "uv",
+  "virtualenv",
+]
+types_packages = [
+  { include-group = "test" },
+  "typing-extensions",
 ]
 types = [
-  "scriptx[tests]",
-  "typing-extensions",
+  { include-group = "types_packages" },
   "mypy",
+]
+types_other = [
+  { include-group = "types_packages" },
   "pyrefly",
   "pyright[nodejs]",
   "ty",
+]
+docs = [
+  "zensical",
+  "mkdocs-material",
+  "mkdocs-marimo",
+  "pymdown-extensions",
+  "click",
 ]
 
 [project.urls]
@@ -51,8 +71,7 @@ Issues = "https://github.com/FlavioAmurrioCS/scriptx/issues"
 Source = "https://github.com/FlavioAmurrioCS/scriptx"
 
 [project.scripts]
-scriptx = "scriptx.__main__:main"
-",scriptx" = "scriptx.__main__:main"
+scriptx = "scriptx.main:main"
 
 ###############################################################################
 # region: hatch
@@ -64,14 +83,13 @@ source = "vcs"
 version-file = "src/scriptx/_version.py"
 
 [tool.hatch.envs.hatch-test]
-extra-dependencies = [
-  "scriptx[tests]",
+dependency-groups = [
+  "test",
 ]
 
 [tool.hatch.envs.types]
-extra-dependencies = [
-  "mypy>=1.0.0",
-  "scriptx[types]",
+dependency-groups = [
+  "types",
 ]
 
 [tool.hatch.envs.types.scripts]
@@ -79,6 +97,7 @@ check = "mypy --install-types --non-interactive {args:src/scriptx tests}"
 
 [[tool.hatch.envs.hatch-test.matrix]]
 python = [
+  "3.9",
   "3.10",
   "3.11",
   "3.12",
@@ -126,7 +145,7 @@ exclude_lines = [
 # region: pyright
 ###############################################################################
 [tool.pyright]
-pythonVersion = "3.10"
+pythonVersion = "3.9"
 ###############################################################################
 # endregion: pyright
 ###############################################################################
@@ -135,7 +154,7 @@ pythonVersion = "3.10"
 # region: mypy
 ###############################################################################
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.9"
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true

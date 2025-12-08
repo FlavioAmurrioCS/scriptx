@@ -1,0 +1,7 @@
+{
+    "tools": {
+        "uv-to-pipfile": {
+            "location": "https://raw.githubusercontent.com/FlavioAmurrioCS/uv-to-pipfile/refs/heads/main/src/uv_to_pipfile/uv_to_pipfile.py"
+        }
+    }
+}
