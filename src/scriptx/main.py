@@ -711,6 +711,7 @@ class Inventory(Mapping[str, str]):
         bin_location = os.path.join(self.bin_path, name)
         os.makedirs(self.bin_path, exist_ok=True)
         os.symlink(metadata["path"], bin_location)
+        print(f"Tool '{name}' installed successfully in {bin_location}.")
         return metadata
 
     def uninstall(self, name: str) -> None:
@@ -739,10 +740,8 @@ class Inventory(Mapping[str, str]):
             return []
         return [name for name in os.listdir(self.path) if name in self]
 
-    def get_metadata(self, name: str) -> InstalledTool | None:
+    def get_metadata(self, name: str) -> InstalledTool:
         metadata_file = os.path.join(self.path, name, "metadata.json")
-        if not os.path.exists(metadata_file):
-            return None
         with open(metadata_file) as f:
             return json.load(f)
 
@@ -799,12 +798,11 @@ class InstallCmd(NamedTuple):
         parser.formatter_class = argparse.RawTextHelpFormatter
         parser.epilog = dedent("""\
         Example:
-          %(prog)s https://example.com/tools/mytool.py
           %(prog)s ./file.py
-          %(prog)s gh:owner/repo/path/to/tool.py
+          %(prog)s https://example.com/tools/mytool.py
           %(prog)s https://example.com/tools/mytool.py --name toolname
-          %(prog)s https://example.com/tools/mytool.py --python 3.11
         """)
+        #   %(prog)s gh:owner/repo/path/to/tool.py
         parser.add_argument(
             "url_or_path", type=str, help="URL or file path of the tool to install."
         )
@@ -817,9 +815,9 @@ class InstallCmd(NamedTuple):
         parser.add_argument(
             "--link",
             type=str,
-            default="copy",
+            default="symlink",
             choices=["symlink", "copy", "hardlink"],
-            help="Method to link the tool in the inventory when is a local file (default: copy).",
+            help="Method to link the tool in the inventory when is a local file (default: %(default)s).",
         )
         return parser
 
@@ -827,7 +825,12 @@ class InstallCmd(NamedTuple):
         location = INVENTORY.install(self.url_or_path, name=self.name, link=self.link)
         if location is None:
             return 1
-        print(f"Tool installed at: {location['path']}")
+        path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+        if INVENTORY.bin_path not in path_dirs:
+            print(
+                f'Warning: {INVENTORY.bin_path} is not in your PATH. ie (export PATH="${{HOME}}/opt/scriptx/bin:${{PATH}}")',
+                file=sys.stderr,
+            )
         return 0
 
 
@@ -844,8 +847,6 @@ class ReInstallCmd(NamedTuple):
         parser.epilog = dedent("""\
         Example:
           %(prog)s mytool
-          %(prog)s mytool --python 3.11
-          %(prog)s mytool --python 3.11 --name newtoolname
         """)
         parser.add_argument("tool", type=str, help="Name of the tool to reinstall.")
         return parser
@@ -956,7 +957,8 @@ class UninstallCmd(NamedTuple):
 class ListCmd(NamedTuple):
     """List all installed tools."""
 
-    all: bool = False
+    # all: bool = False
+    format: Literal["text", "json"]
 
     @classmethod
     def arg_parser(cls, parser: argparse.ArgumentParser | None = None) -> argparse.ArgumentParser:
@@ -967,16 +969,23 @@ class ListCmd(NamedTuple):
         Example:
           %(prog)s <PLACEHOLDER_EXAMPLE>
         """)
+        # parser.add_argument(
+        #     "--all",
+        #     action="store_true",
+        #     help="List all tools, including those not currently installed.",
+        # )
         parser.add_argument(
-            "--all",
-            action="store_true",
-            help="List all tools, including those not currently installed.",
+            "--format", type=str, default="json", help="Output format (text, json)."
         )
         return parser
 
     def run(self) -> int:
-        for line in INVENTORY.list_scripts():
-            print(f" - {line}")
+        if self.format == "text":
+            for line in INVENTORY.list_scripts():
+                print(f" - {line}")
+        else:
+            ret = {line: INVENTORY.get_metadata(line) for line in INVENTORY.list_scripts()}
+            print(json.dumps(ret, indent=2))
         return 0
 
 

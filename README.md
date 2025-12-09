@@ -30,20 +30,37 @@ uv tool install scriptx
 ## Usage
 
 ```bash
-[flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
+[flavio@mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
 $ scriptx --help
+usage: scriptx [-h] [-v] [-V] {install,reinstall,upgrade,uninstall,list,run,edit,registry-add,registry-remove,registry-list,registry-update} ...
 
- Usage: scriptx [OPTIONS] COMMAND [ARGS]...
+ScriptX v2 - A tool management system.
 
-╭─ Options ───────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                     │
-╰─────────────────────────────────────────────────────────────────────────────────╯
-╭─ Commands ──────────────────────────────────────────────────────────────────────╮
-│ install     Install a script from a local path or URL.                          │
-│ uninstall   Uninstall a script by name or source URL/path.                      │
-│ list        List all installed scripts.                                         │
-│ run         Run an installed script by name, passing any additional arguments.  │
-╰─────────────────────────────────────────────────────────────────────────────────╯
+positional arguments:
+  {install,reinstall,upgrade,uninstall,list,run,edit,registry-add,registry-remove,registry-list,registry-update}
+    install             Install a tool from a URL or file path.
+    reinstall           Reinstall a previously installed tool.
+    upgrade             Upgrade an installed tool to the latest version.
+    uninstall           Uninstall a previously installed tool.
+    list                List all installed tools.
+    run                 Run a specified tool with optional arguments.
+    edit                Open script in editor.
+    registry-add        Add a new registry.
+    registry-remove     Remove a specified registry.
+    registry-list       List all registries.
+    registry-update     Update specified registries or all if none specified.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -v, --verbose         Increase verbosity level.
+  -V, --version         show program's version number and exit
+
+Environment variables:
+  SCRIPTX_HOME  - Directory where ScriptX stores its data (default: ~/opt/scriptx)
+  SCRIPTX_BIN   - Directory where ScriptX stores executable tools (default: ~/opt/scriptx/bin)
+
+Add the following to your shell profile to include ScriptX tools in your PATH:
+  export PATH="${HOME}/opt/scriptx/bin:${PATH}"
 ```
 
 ### Install a tool
@@ -56,55 +73,59 @@ Tool will:
 - NOTE: You can pass in a alternative name for the script, by default it will use the basename of the SRC.
 
 ```bash
-[flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx][init ✗]
+[flavio@mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
 $ scriptx install --help
+usage: scriptx install [-h] [--name NAME] [--link {symlink,copy,hardlink}] url_or_path
 
- Usage: scriptx install [OPTIONS] SRC
+Install a tool from a URL or file path.
 
- Install a script from a local path or URL.
+positional arguments:
+  url_or_path           URL or file path of the tool to install.
 
-╭─ Arguments ──────────────────────────────────────╮
-│ *    src      TEXT  [required]                   │
-╰──────────────────────────────────────────────────╯
-╭─ Options ────────────────────────────────────────╮
-│ --name        TEXT                               │
-│ --help              Show this message and exit.  │
-╰──────────────────────────────────────────────────╯
+optional arguments:
+  -h, --help            show this help message and exit
+  --name NAME           Optional name for the tool. If not provided, it will be derived from the URL or file path.
+  --link {symlink,copy,hardlink}
+                        Method to link the tool in the inventory when is a local file (default: copy).
 
-[flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
+Example:
+  scriptx install ./file.py
+  scriptx install https://example.com/tools/mytool.py
+  scriptx install https://example.com/tools/mytool.py --name toolname
+
+[flavio@mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
 $ scriptx install https://flavioamurriocs.github.io/uv-to-pipfile/src/uv_to_pipfile/uv_to_pipfile.py
-uv_to_pipfile.py has been installed at: /Users/flavio/opt/scriptx/bin/uv_to_pipfile.py
-Warning: /Users/flavio/opt/scriptx/bin is not in your PATH. Please add it to run 'uv_to_pipfile.py' from the command line.
+Tool 'uv_to_pipfile' installed successfully in /Users/flavio/opt/scriptx/bin/uv_to_pipfile.
+Warning: /Users/flavio/opt/scriptx/bin is not in your PATH. ie (export PATH="${HOME}/opt/scriptx/bin:${PATH}")
 
-[flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
-$ head -n2 /Users/flavio/opt/scriptx/bin/uv_to_pipfile.py
-#!/Users/flavio/.cache/uv/environments-v2/tmplgn78zuu-f65b2dd2c079bd68/bin/python
+[flavio@mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
+$ head -n2 /Users/flavio/opt/scriptx/bin/uv_to_pipfile
+#!/Users/flavio/opt/scriptx/installed_tools/uv_to_pipfile/venv/bin/python
 # /// script
 ```
 
 ### Display installed scripts
-```bash
-[flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
+```json
+[flavio@mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
 $ scriptx list
 {
-  "uv_to_pipfile.py": {
-    "src": "https://flavioamurriocs.github.io/uv-to-pipfile/src/uv_to_pipfile/uv_to_pipfile.py",
-    "install_location": "/Users/flavio/opt/scriptx/bin/uv_to_pipfile.py",
-    "venv": "/Users/flavio/.cache/uv/environments-v2/tmplgn78zuu-f65b2dd2c079bd68"
+  "uv_to_pipfile": {
+    "source": "https://flavioamurriocs.github.io/uv-to-pipfile/src/uv_to_pipfile/uv_to_pipfile.py",
+    "venv": "/Users/flavio/opt/scriptx/installed_tools/uv_to_pipfile/venv",
+    "path": "/Users/flavio/opt/scriptx/installed_tools/uv_to_pipfile/script.py"
   }
 }
-
 ```
 
 ### Execute the script via the tool
 ```bash
-[flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
-$ scriptx run uv_to_pipfile.py --help
-usage: uv_to_pipfile.py [-h] [--uv-lock UV_LOCK] [--pipfile-lock PIPFILE_LOCK]
+[flavio@mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
+$ scriptx run uv_to_pipfile --help
+usage: script.py [-h] [--uv-lock UV_LOCK] [--pipfile-lock PIPFILE_LOCK]
 
 Convert uv.lock to Pipfile.lock
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
   --uv-lock UV_LOCK     Path to the uv.lock file (default: ./uv.lock)
   --pipfile-lock PIPFILE_LOCK
@@ -115,11 +136,11 @@ options:
 NOTE: You must update your `PATH`
 ```bash
 [flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
-$ export PATH="/Users/flavio/opt/scriptx/bin:${PATH}"
+$ export PATH="${HOME}/opt/scriptx/bin:${PATH}"
 
 [flavio@Mac ~/dev/github.com/FlavioAmurrioCS/scriptx]
-$ uv_to_pipfile.py --help
-usage: uv_to_pipfile.py [-h] [--uv-lock UV_LOCK] [--pipfile-lock PIPFILE_LOCK]
+$ uv_to_pipfile --help
+usage: uv_to_pipfile [-h] [--uv-lock UV_LOCK] [--pipfile-lock PIPFILE_LOCK]
 
 Convert uv.lock to Pipfile.lock
 
