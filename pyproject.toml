@@ -27,6 +27,9 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
+  "packaging",
+  "tomli >= 1.1.0 ; python_version < '3.11'",
+  "uv",
 ]
 
 [project.optional-dependencies]

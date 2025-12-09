@@ -109,8 +109,15 @@ SCRIPT_PEP723 = f"""\
 # /// script
 # requires-python = ">=3.8"
 # dependencies = [
-#   "tomli >= 1.1.0 ; python_version < '3.11'",
+#     "tomli >= 1.1.0 ; python_version < '3.11'",
 # ]
+#
+# [[tool.uv.index]]
+# url = "https://flavioamurriocs.github.io/pypi/simple"
+#
+# [[tool.uv.index]]
+# url = "https://pypi.org/simple"
+# default = true
 # ///
 {SCRIPT_SIMPLE}
 """
@@ -131,6 +138,10 @@ def test_extract_script_metadata() -> None:
     metadata = extract_script_metadata(SCRIPT_PEP723)
     assert metadata["dependencies"] == ["tomli >= 1.1.0 ; python_version < '3.11'"]
     assert metadata["requires-python"] == ">=3.8"
+    assert metadata.get("tool", {}).get("uv", {}).get("index", []) == [
+        {"url": "https://flavioamurriocs.github.io/pypi/simple"},
+        {"url": "https://pypi.org/simple", "default": True},
+    ]
     metadata = extract_script_metadata(SCRIPT_PEP723_EMPTY)
     assert metadata["dependencies"] == []
     assert metadata["requires-python"] == ">=3.12"
@@ -146,10 +157,22 @@ def test_extract_script_metadata_with_regex() -> None:
         requires-python = ">=3.8"
         dependencies = [
           "tomli >= 1.1.0 ; python_version < '3.11'",
-        ]""")
+        ]
+
+        [[tool.uv.index]]
+        url = "https://flavioamurriocs.github.io/pypi/simple"
+
+        [[tool.uv.index]]
+        url = "https://pypi.org/simple"
+        default = true
+        """)
     metadata = extract_script_metadata_with_regex(content)
     assert metadata["dependencies"] == ["tomli >= 1.1.0 ; python_version < '3.11'"]
     assert metadata["requires-python"] == ">=3.8"
+    assert metadata.get("tool", {}).get("uv", {}).get("index", []) == [
+        {"url": "https://flavioamurriocs.github.io/pypi/simple"},
+        {"url": "https://pypi.org/simple", "default": True},
+    ]
 
 
 # def test_matching_python() -> None:
