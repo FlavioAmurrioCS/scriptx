@@ -79,8 +79,23 @@ if TYPE_CHECKING:
         ) -> argparse.ArgumentParser: ...
         def run(self) -> int: ...
 
+    class ScriptMetadataToolUvIndex(TypedDict):
+        url: str
+        default: NotRequired[bool]
+
+    class ScriptMetadataToolUv(TypedDict):
+        index: list[ScriptMetadataToolUvIndex]
+
+    class ScriptMetadataTool(TypedDict):
+        uv: ScriptMetadataToolUv
+
     ScriptMetadata = TypedDict(
-        "ScriptMetadata", {"requires-python": str, "dependencies": list[str]}
+        "ScriptMetadata",
+        {
+            "requires-python": str,
+            "dependencies": list[str],
+            "tool": NotRequired[ScriptMetadataTool],
+        },
     )
 
     LinkMode = Literal["symlink", "copy", "hardlink"]
@@ -327,7 +342,31 @@ def extract_script_metadata_with_regex(captured_content: str) -> ScriptMetadata:
             if line.strip() and not line.strip().startswith("#")
         ]
 
-    return {"requires-python": python_version, "dependencies": dependencies}
+    ret: ScriptMetadata = {"requires-python": python_version, "dependencies": dependencies}
+    tool_uv_index_pattern = re.compile(
+        r"^\[\[tool\.uv\.index\]\]\s*(?P<content>(^.+$\s)+)", re.MULTILINE
+    )
+    uv_indexes: list[ScriptMetadataToolUvIndex] = []
+    for match in re.finditer(tool_uv_index_pattern, captured_content):
+        index_content = match.group("content")
+        url_match = re.search(
+            r"^url\s*=\s*(['\"])(?P<value>.+)(\1)$",
+            index_content,
+            re.MULTILINE,
+        )
+        default_match = re.search(
+            r"^default\s*=\s*(?P<value>true|false)$",
+            index_content,
+            re.MULTILINE,
+        )
+        if url_match:
+            index_entry: ScriptMetadataToolUvIndex = {"url": url_match["value"]}
+            if default_match:
+                index_entry["default"] = default_match["value"].lower() == "true"
+            uv_indexes.append(index_entry)
+    if uv_indexes:
+        ret["tool"] = {"uv": {"index": uv_indexes}}
+    return ret
 
 
 def version_spec_to_predicate(version_spec: str) -> Callable[[tuple[int, int, int]], bool]:
@@ -584,7 +623,7 @@ class Inventory(Mapping[str, str]):
         with open(metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)
 
-    def install(
+    def install(  # noqa: PLR0915
         self, src: str, name: str | None = None, link: LinkMode = "copy"
     ) -> InstalledTool | None:
         original_src = src
@@ -610,11 +649,41 @@ class Inventory(Mapping[str, str]):
             script_metadata = extract_script_metadata(content)
             python_executable = pythons()[matching_python(script_metadata["requires-python"])[0]]
             logger.debug("Using python executable %s for tool '%s'.", python_executable, name)
-            # # Ensure it is a valid python script
-            # with time_it("Validating script syntax"):
-            #     cmd = (python_executable, "-m", "ast", install_script_path)
-            #     _result = subprocess_run(cmd, check=True, capture_output=False)
+            # Ensure it is a valid python script
+            with time_it("Validating script syntax"):
+                cmd = (python_executable, "-m", "ast", install_script_path)
+                _result = subprocess_run(cmd, check=False, capture_output=False)
+                if _result.returncode != 0:
+                    print(
+                        f"Tool '{name}' has invalid Python syntax. Installation aborted.",
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(1)
             dependencies = script_metadata.get("dependencies", [])
+            indexes: list[ScriptMetadataToolUvIndex] = (
+                script_metadata.get("tool", {}).get("uv", {}).get("index", [])
+            )
+
+            default_index = (
+                os.getenv("PIP_INDEX_URL")
+                or os.getenv("UV_DEFAULT_INDEX")
+                or "https://pypi.org/simple"
+            )
+            extra_index = os.getenv("PIP_EXTRA_INDEX_URL") or os.getenv("UV_INDEX")
+
+            for index in indexes:
+                if index.get("default", False):
+                    default_index = index["url"]
+                else:
+                    extra_index = index["url"]
+            if default_index:
+                logger.debug("Setting default package index to %s", default_index)
+                os.environ["PIP_INDEX_URL"] = default_index
+                os.environ["UV_DEFAULT_INDEX"] = default_index
+            if extra_index:
+                logger.debug("Setting extra package index to %s", extra_index)
+                os.environ["PIP_EXTRA_INDEX_URL"] = extra_index
+                os.environ["UV_INDEX"] = extra_index
 
             _venv_path = create_virtualenv(
                 path=os.path.join(tmpdir, "venv"),
@@ -628,6 +697,7 @@ class Inventory(Mapping[str, str]):
             with open(install_script_path, "w") as f:
                 f.writelines(content_lines)
             os.chmod(install_script_path, 0o700)
+            os.makedirs(self.path, exist_ok=True)
             os.replace(tmpdir, final_install_location)
 
         metadata: InstalledTool = {
