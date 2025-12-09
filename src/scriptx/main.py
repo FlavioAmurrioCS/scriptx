@@ -4,6 +4,7 @@
 # dependencies = [
 #   "packaging",
 #   "tomli >= 1.1.0 ; python_version < '3.11'",
+#   "uv",
 # ]
 # ///
 # flake8: noqa: E501
