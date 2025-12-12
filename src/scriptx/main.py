@@ -114,7 +114,7 @@ def time_it(what: str) -> Generator[None, None, None]:
         logger.debug("%s took %.2f milliseconds.", what, (t1 - t0) / 1e6)
 
 
-def http_request(  # noqa: C901, PLR0912
+def http_request(  # noqa: C901, PLR0912, PLR0915
     url: str, *, method: HTTP_METHOD = "GET", **kwargs: Unpack[_CompleteRequestArgs]
 ) -> HTTPResponse:
     import urllib.parse
@@ -185,6 +185,38 @@ def http_request(  # noqa: C901, PLR0912
         if not verify:
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
+
+    if "Authorization" not in headers:
+        from urllib.parse import urlparse
+
+        parsed_url = urlparse(url)
+        authorization_env_var = (
+            parsed_url.netloc.upper().replace(".", "_").replace("-", "_") + "_AUTHORIZATION"
+        )
+        logger.debug("Checking for authorization in environment variable %s", authorization_env_var)
+        netrc_file = os.path.expanduser(os.getenv("NETRC") or os.path.join("~", ".netrc"))
+        if authorization_env_var in os.environ:
+            logger.debug("Using authorization from environment variable %s", authorization_env_var)
+            headers["Authorization"] = os.environ[authorization_env_var]
+        elif os.path.exists(netrc_file):
+            import netrc
+
+            auth = None
+            try:
+                nrc = netrc.netrc(netrc_file)
+                auth = nrc.authenticators(parsed_url.netloc)
+            except netrc.NetrcParseError as e:
+                logger.warning("Failed to parse %s file: %s", netrc_file, e)
+            if auth:
+                logger.debug(
+                    "Using authorization from %s file for %s", netrc_file, parsed_url.netloc
+                )
+                username, password = auth[0 if auth[0] else 1], auth[2]
+                import base64
+
+                headers["Authorization"] = (
+                    f"Basic {base64.b64encode(f'{username}:{password}'.encode()).decode()}"
+                )
 
     req = urllib.request.Request(  # noqa: S310
         url=final_url,
