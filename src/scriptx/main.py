@@ -685,7 +685,7 @@ class Inventory(Mapping[str, str]):
             # Ensure it is a valid python script
             with time_it("Validating script syntax"):
                 cmd = (python_executable, "-m", "ast", install_script_path)
-                _result = subprocess_run(cmd, check=False, capture_output=False)
+                _result = subprocess_run(cmd, check=False, capture_output=True)
                 if _result.returncode != 0:
                     print(
                         f"Tool '{name}' has invalid Python syntax. Installation aborted.",
