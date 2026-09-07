@@ -1389,9 +1389,7 @@ def main(argv: list[str] | tuple[str, ...] | None = None) -> int:
     cls = SUB_COMMANDS[command]
     exclude_args = ("command", "verbose")
     try:
-        cmd_instance = cls(
-            **{k: v for k, v in vars(args).items() if k not in exclude_args}
-        )  # pyrefly: ignore[bad-instantiation]
+        cmd_instance = cls(**{k: v for k, v in vars(args).items() if k not in exclude_args})  # pyrefly: ignore[bad-instantiation]
     except TypeError as e:
         print(
             f"BUG!!!!!: {cls.__name__} received arguments from the parser that do not match its expected attributes: {e}",
